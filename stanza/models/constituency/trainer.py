@@ -317,9 +317,9 @@ def build_trainer(args, train_trees, dev_trees, pt, forward_charlm, backward_cha
             # run adadelta over the model for a few iterations
             # then use just the embeddings from the temp model
             logger.info("Warming up model for %d iterations using AdaDelta to train the embeddings", args['adadelta_warmup'])
-            temp_model = LSTMModel(pt, forward_charlm, backward_charlm, bert_model, bert_tokenizer, train_transitions, train_constituents, tags, words, rare_words, root_labels, open_nodes, unary_limit, args)
+            model = LSTMModel(pt, forward_charlm, backward_charlm, bert_model, bert_tokenizer, train_transitions, train_constituents, tags, words, rare_words, root_labels, open_nodes, unary_limit, args)
             if args['cuda']:
-                temp_model.cuda()
+                model.cuda()
             temp_args = dict(args)
             temp_args['optim'] = 'adadelta'
             temp_args['learning_rate'] = DEFAULT_LEARNING_RATES['adadelta']
@@ -327,11 +327,10 @@ def build_trainer(args, train_trees, dev_trees, pt, forward_charlm, backward_cha
             temp_args['learning_rho'] = DEFAULT_LEARNING_RHO
             temp_args['weight_decay'] = DEFAULT_WEIGHT_DECAY['adadelta']
             temp_args['epochs'] = args['adadelta_warmup']
-            temp_optim = build_optimizer(temp_args, temp_model)
-            temp_trainer = Trainer(temp_args, temp_model, temp_optim)
+            temp_args['separate_learning'] = True   # find some other way to pass this in when making an optimizer
+            temp_optim = build_optimizer(temp_args, model)
+            temp_trainer = Trainer(temp_args, model, temp_optim)
             iterate_training(temp_trainer, train_trees, train_sequences, train_transitions, dev_trees, temp_args, None, None, evaluator)
-            logger.info("Using embedding weights from initial training to train full model")
-            model.init_embeddings_from_other(temp_model)
 
         optimizer = build_optimizer(args, model)
 
