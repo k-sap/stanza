@@ -228,7 +228,6 @@ class LSTMModel(BaseModel, nn.Module):
         self.register_buffer('word_zeros', torch.zeros(self.hidden_size * self.num_tree_lstm_layers))
         self.register_buffer('transition_zeros', torch.zeros(self.num_lstm_layers, 1, self.transition_hidden_size))
         self.register_buffer('constituent_zeros', torch.zeros(self.num_lstm_layers, 1, self.hidden_size))
-        self.register_buffer('word_constituent_zeros', torch.zeros(self.num_tree_lstm_layers, self.hidden_size))
 
         # possibly add a couple vectors for bookends of the sentence
         # We put the word_start and word_end here, AFTER counting the
@@ -378,6 +377,8 @@ class LSTMModel(BaseModel, nn.Module):
             initialize_linear(self.reduce_linear, self.args['nonlinearity'], self.hidden_size)
             initialize_linear(self.reduce_bigram, self.args['nonlinearity'], self.hidden_size)
         elif self.constituency_composition == ConstituencyComposition.TREE_LSTM:
+            self.constituent_reduce_embedding = nn.Embedding(num_embeddings = len(tags)+2,
+                                                             embedding_dim = self.num_tree_lstm_layers * self.hidden_size)
             self.constituent_reduce_lstm = nn.LSTM(input_size=self.hidden_size, hidden_size=self.hidden_size, num_layers=self.num_tree_lstm_layers, dropout=self.lstm_layer_dropout)
         else:
             raise ValueError("Unhandled ConstituencyComposition: {}".format(self.constituency_composition))
@@ -743,7 +744,17 @@ class LSTMModel(BaseModel, nn.Module):
         word_node = state.word_queue[state.word_position]
         word = word_node.value
         if self.constituency_composition == ConstituencyComposition.TREE_LSTM:
-            return Constituent(word, word_node.hx.view(self.num_tree_lstm_layers, self.hidden_size), self.word_constituent_zeros)
+            # another option here was to use zeros for the cx
+            # this works slightly better
+            tree_hx = word_node.hx.view(self.num_tree_lstm_layers, self.hidden_size)
+            # note: it might be better to coordinate this tag dropout
+            # with the tag dropout from the initial word queues.
+            # however, it's a bit more expensive that way
+            tag = None if self.training and random.random() < self.args['tag_unknown_frequency'] else word.label
+            tag_tensor = self.tag_tensors[self.tag_map.get(tag, UNK_ID)]
+            tree_cx = self.constituent_reduce_embedding(tag_tensor)
+            tree_cx = tree_cx.view(self.num_tree_lstm_layers, self.hidden_size)
+            return Constituent(word, tree_hx, tree_cx * tree_hx)
         else:
             return Constituent(word, word_node.hx[:self.hidden_size].unsqueeze(0), None)
 
@@ -830,7 +841,6 @@ class LSTMModel(BaseModel, nn.Module):
             label_hx = torch.stack(label_hx).unsqueeze(0)
 
             max_length = max(len(children) for children in children_lists)
-            zeros = self.word_constituent_zeros
 
             # stacking will let us do elementwise multiplication faster, hopefully
             node_hx = [[child.tree_hx for child in children] for children in children_lists]
