@@ -432,10 +432,8 @@ class LSTMModel(BaseModel, nn.Module):
                 lines.append("%s %.6g" % (name, torch.norm(param).item()))
         logger.info("\n".join(lines))
 
-    def is_low_decay_parameter(self, name):
+    def is_zero_decay_parameter(self, name):
         #if name.find("_embedding") >= 0:
-        #    return True
-        #if name.startswith("partitioned_transformer_module"):
         #    return True
         #if name.find(".bias") >= 0:
         #    return True
@@ -443,12 +441,30 @@ class LSTMModel(BaseModel, nn.Module):
             return True
         return False
 
+    def is_low_decay_parameter(self, name):
+        if self.is_zero_decay_parameter(name):
+            return False
+        if name.startswith("partitioned_transformer_module"):
+            return True
+        return False
+
+    def is_base_decay_parameter(self, name):
+        if self.is_zero_decay_parameter(name):
+            return False
+        if self.is_low_decay_parameter(name):
+            return False
+        return True
+
     def base_parameters(self):
-        params = [param for name, param in self.named_parameters() if not self.is_low_decay_parameter(name)]
+        params = [param for name, param in self.named_parameters() if self.is_base_decay_parameter(name)]
         return params
 
     def low_decay_parameters(self):
         params = [param for name, param in self.named_parameters() if self.is_low_decay_parameter(name)]
+        return params
+
+    def zero_decay_parameters(self):
+        params = [param for name, param in self.named_parameters() if self.is_zero_decay_parameter(name)]
         return params
 
     def build_char_representation(self, all_word_labels, device, forward):
