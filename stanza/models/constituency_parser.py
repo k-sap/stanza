@@ -194,6 +194,8 @@ def parse_args(args=None):
     parser.add_argument('--oracle_frequency', type=float, default=0.8, help="How often to use the oracle vs how often to force the correct transition")
     parser.add_argument('--oracle_forced_errors', type=float, default=0.001, help="Occasionally have the model randomly walk through the state space to try to learn how to recover")
 
+    parser.add_argument('--adadelta_warmup', type=int, default=0, help="Adadelta seems to completely rewrite the embeddings, as opposed to adamw for example which finds a local minimum very close to the starting location")
+
     # 30 is slightly slower than 50, for example, but seems to train a bit better on WSJ
     # earlier version of the model (less accurate overall) had the following results with adadelta:
     #  30: 0.9085

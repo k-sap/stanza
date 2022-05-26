@@ -33,6 +33,7 @@ from stanza.models.constituency.lstm_model import LSTMModel
 from stanza.models.constituency.parse_transitions import State, TransitionScheme
 from stanza.models.constituency.parse_tree import Tree
 from stanza.models.constituency.utils import retag_trees, build_optimizer
+from stanza.models.constituency.utils import DEFAULT_LEARNING_EPS, DEFAULT_LEARNING_RATES, DEFAULT_LEARNING_RHO, DEFAULT_WEIGHT_DECAY
 from stanza.server.parser_eval import EvaluateParser
 
 tqdm = utils.get_tqdm()
@@ -248,7 +249,7 @@ def convert_trees_to_sequences(trees, tree_type, transition_scheme):
     transitions = transition_sequence.all_transitions(sequences)
     return sequences, transitions
 
-def build_trainer(args, train_trees, dev_trees, pt, forward_charlm, backward_charlm, bert_model, bert_tokenizer):
+def build_trainer(args, train_trees, dev_trees, pt, forward_charlm, backward_charlm, bert_model, bert_tokenizer, evaluator):
     """
     Builds a Trainer (with model) and the train_sequences and transitions for the given trees.
     """
@@ -312,6 +313,25 @@ def build_trainer(args, train_trees, dev_trees, pt, forward_charlm, backward_cha
         if args['cuda']:
             model.cuda()
         logger.info("Number of words in the training set found in the embedding: {} out of {}".format(model.num_words_known(words), len(words)))
+        if args['adadelta_warmup'] > 0:
+            # run adadelta over the model for a few iterations
+            # then use just the embeddings from the temp model
+            logger.info("Warming up model for %d iterations using AdaDelta to train the embeddings", args['adadelta_warmup'])
+            temp_model = LSTMModel(pt, forward_charlm, backward_charlm, bert_model, bert_tokenizer, train_transitions, train_constituents, tags, words, rare_words, root_labels, open_nodes, unary_limit, args)
+            if args['cuda']:
+                temp_model.cuda()
+            temp_args = dict(args)
+            temp_args['optim'] = 'adadelta'
+            temp_args['learning_rate'] = DEFAULT_LEARNING_RATES['adadelta']
+            temp_args['learning_eps'] = DEFAULT_LEARNING_EPS['adadelta']
+            temp_args['learning_rho'] = DEFAULT_LEARNING_RHO
+            temp_args['weight_decay'] = DEFAULT_WEIGHT_DECAY['adadelta']
+            temp_args['epochs'] = args['adadelta_warmup']
+            temp_optim = build_optimizer(temp_args, temp_model)
+            temp_trainer = Trainer(temp_args, temp_model, temp_optim)
+            iterate_training(temp_trainer, train_trees, train_sequences, train_transitions, dev_trees, temp_args, None, None, evaluator)
+            logger.info("Using embedding weights from initial training to train full model")
+            model.init_embeddings_from_other(temp_model)
 
         optimizer = build_optimizer(args, model)
 
@@ -393,9 +413,10 @@ def train(args, model_save_file, model_load_file, model_save_latest_file, retag_
         backward_charlm = load_charlm(args['charlm_backward_file'])
         bert_model, bert_tokenizer = load_bert(args['bert_model'])
 
-        trainer, train_sequences, train_transitions = build_trainer(args, train_trees, dev_trees, pt, forward_charlm, backward_charlm, bert_model, bert_tokenizer)
+        trainer, train_sequences, train_transitions = build_trainer(args, train_trees, dev_trees, pt, forward_charlm, backward_charlm, bert_model, bert_tokenizer, evaluator)
 
-        iterate_training(trainer, train_trees, train_sequences, train_transitions, dev_trees, args, model_save_file, model_save_latest_file, evaluator)
+        start_epoch = min(1, args['adadelta_warmup'] + 1)
+        iterate_training(trainer, train_trees, train_sequences, train_transitions, dev_trees, args, model_save_file, model_save_latest_file, evaluator, start_epoch)
 
     if args['wandb']:
         wandb.finish()
@@ -412,7 +433,7 @@ class EpochStats(namedtuple("EpochStats", ['epoch_loss', 'transitions_correct', 
         return EpochStats(epoch_loss, transitions_correct, transitions_incorrect, repairs_used, fake_transitions_used)
 
 
-def iterate_training(trainer, train_trees, train_sequences, transitions, dev_trees, args, model_filename, model_latest_filename, evaluator):
+def iterate_training(trainer, train_trees, train_sequences, transitions, dev_trees, args, model_filename, model_latest_filename, evaluator, start_epoch=1):
     """
     Given an initialized model, a processed dataset, and a secondary dev dataset, train the model
 
@@ -455,7 +476,7 @@ def iterate_training(trainer, train_trees, train_sequences, transitions, dev_tre
     leftover_training_data = []
     best_f1 = 0.0
     best_epoch = 0
-    for epoch in range(1, args['epochs']+1):
+    for epoch in range(start_epoch, args['epochs']+1):
         model.train()
         logger.info("Starting epoch %d", epoch)
         if args['log_norms']:
@@ -476,7 +497,8 @@ def iterate_training(trainer, train_trees, train_sequences, transitions, dev_tre
             logger.info("New best dev score: %.5f > %.5f", f1, best_f1)
             best_f1 = f1
             best_epoch = epoch
-            trainer.save(model_filename, save_optimizer=True)
+            if model_filename:
+                trainer.save(model_filename, save_optimizer=True)
         if model_latest_filename:
             trainer.save(model_latest_filename, save_optimizer=True)
         logger.info("Epoch {} finished\nTransitions correct: {}  Transitions incorrect: {}\n  Total loss for epoch: {}\n  Dev score      ({:5}): {}\n  Best dev score ({:5}): {}".format(epoch, epoch_stats.transitions_correct, epoch_stats.transitions_incorrect, epoch_stats.epoch_loss, epoch, f1, best_epoch, best_f1))

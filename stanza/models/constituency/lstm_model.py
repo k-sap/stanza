@@ -405,6 +405,32 @@ class LSTMModel(BaseModel, nn.Module):
         # word size + constituency size + transition size
         self.output_layers = self.build_output_layers(self.args['num_output_layers'], len(transitions))
 
+    def init_embeddings_from_other(self, other):
+        """
+        Init the embedding layers from the values in the other model
+        """
+        # TODO: do parameters as well
+        self_embs  = [self.delta_embedding,  self.transition_embedding,  self.constituent_open_embedding,  self.dummy_embedding]
+        other_embs = [other.delta_embedding, other.transition_embedding, other.constituent_open_embedding, other.dummy_embedding]
+        if self.tag_embedding_dim > 0 and other.tag_embedding_dim > 0:
+            self_embs.append(self.tag_embedding)
+            other_embs.append(other.tag_embedding)
+
+        for s_emb, o_emb in zip(self_embs, other_embs):
+            s_emb.weight.data.copy_(o_emb.weight.data)
+
+        self_params = []
+        other_params = []
+        if self.sentence_boundary_vectors is not SentenceBoundary.NONE:
+            self_params  = [self.word_start_embedding,  self.word_end_embedding]
+            other_params = [other.word_start_embedding, other.word_end_embedding]
+        if self.sentence_boundary_vectors is SentenceBoundary.EVERYTHING:
+            self_params.extend(  [self.transition_start_embedding,  self.constituent_start_embedding])
+            other_params.extend( [other.transition_start_embedding, other.constituent_start_embedding])
+
+        for s_param, o_param in zip(self_params, other_params):
+            s_param.data.copy_(o_param.data)
+
     def build_output_layers(self, num_output_layers, final_layer_size):
         """
         Build a ModuleList of Linear transformations for the given num_output_layers

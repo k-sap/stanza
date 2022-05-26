@@ -1,8 +1,10 @@
 import os
 
 import pytest
+import torch
 
 from stanza.models.common import pretrain
+from stanza.models.common.utils import set_random_seed
 from stanza.models.constituency import parse_transitions
 from stanza.tests import *
 from stanza.tests.constituency import test_parse_transitions
@@ -245,4 +247,33 @@ def test_forward_timing_choices(pt):
 
     model = build_model(pt, '--pattn_num_heads', '4', '--pattn_num_layers', '4', '--pattn_timing', 'learned')
     run_forward_checks(model)
+
+def check_embedding_copy(pt, check_word_start, *args):
+    set_random_seed(1000, False)
+    m1 = build_model(pt, *args)
+
+    set_random_seed(1001, False)
+    m2 = build_model(pt, *args)
+
+    assert not torch.allclose(m1.delta_embedding.weight, m2.delta_embedding.weight)
+    if check_word_start:
+        assert not torch.allclose(m1.word_start_embedding, m2.word_start_embedding)
+
+    m2.init_embeddings_from_other(m1)
+
+    assert torch.allclose(m1.delta_embedding.weight, m2.delta_embedding.weight)
+    if check_word_start:
+        assert torch.allclose(m1.word_start_embedding, m2.word_start_embedding)
+
+
+def test_copy_embeddings(pt):
+    arg_lists = [[],
+                 ['--sentence_boundary_vectors', 'everything'],
+                 ['--sentence_boundary_vectors', 'words']]
+
+    for args in arg_lists:
+        check_embedding_copy(pt, True, *args)
+
+    args = ['--sentence_boundary_vectors', 'none']
+    check_embedding_copy(pt, False, *args)
 
