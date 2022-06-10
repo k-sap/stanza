@@ -66,7 +66,7 @@ def build_vocab(path, cutoff=0):
     else:
         filenames = [path]
     for filename in filenames:
-        lines = readlines(path + '/' + filename)
+        lines = readlines(filename)
         for line in lines:
             counter.update(list(line))
     # remove infrequent characters from vocab
