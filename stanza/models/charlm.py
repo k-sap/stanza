@@ -62,7 +62,7 @@ def build_vocab(path, cutoff=0):
     # at the end we simply pass a list of chars to the vocab builder
     counter = Counter()
     if os.path.isdir(path):
-        filenames = sorted(glob.glob(os.path.join(path, '*.*'), recursive=True))
+        filenames = sorted(glob.glob(os.path.join(path, '**',  '*.*'), recursive=True))
     else:
         filenames = [path]
     for filename in filenames:
