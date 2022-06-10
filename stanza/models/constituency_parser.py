@@ -349,6 +349,9 @@ def parse_args(args=None):
     parser.add_argument('--retag_method', default='xpos', choices=['xpos', 'upos'], help='Which tags to use when retagging')
     parser.add_argument('--no_retag', dest='retag_package', action="store_const", const=None, help="Don't retag the trees")
 
+    parser.add_argument('--low_lr', default=0.5, type=float, help='How much to attenuate learning rate for pattn')
+    parser.add_argument('--low_weight_decay', default=0.5, type=float, help='How much to attenuate weight decay for pattn')
+
     # Partitioned Attention
     parser.add_argument('--pattn_d_model', default=1024, type=int, help='Partitioned attention model dimensionality')
     parser.add_argument('--pattn_morpho_emb_dropout', default=0.2, type=float, help='Dropout rate for morphological features obtained from pretrained model')
