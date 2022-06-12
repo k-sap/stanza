@@ -1,7 +1,7 @@
 """
 Entry point for training and evaluating a character-level neural language model.
 """
-import glob
+
 import random
 import argparse
 from copy import copy
@@ -62,7 +62,7 @@ def build_vocab(path, cutoff=0):
     # at the end we simply pass a list of chars to the vocab builder
     counter = Counter()
     if os.path.isdir(path):
-        filenames = sorted(glob.glob(os.path.join(path, '*.*'), recursive=True))
+        filenames = sorted(os.listdir(path))
     else:
         filenames = [path]
     for filename in filenames:
