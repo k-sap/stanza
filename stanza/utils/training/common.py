@@ -84,6 +84,8 @@ BERT = {
     # https://github.com/ymcui/Chinese-BERT-wwm
     # there's also hfl/chinese-roberta-wwm-ext-large
     "zh-hans": "hfl/chinese-roberta-wwm-ext",
+    
+    "pl": "allegro/herbert-large-cased"
 }
 
 def build_argparse():
